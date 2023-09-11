@@ -72,7 +72,7 @@ func (in *Custom) DeepCopyObject() runtime.Object {
 func (in *CustomList) DeepCopyInto(out *CustomList) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
-	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
+	in.ListMeta.DeepCopyInto(&out.ListMeta)
 	if in.Items != nil {
 		in, out := &in.Items, &out.Items
 		*out = make([]Custom, len(*in))
