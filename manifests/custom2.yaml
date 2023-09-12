@@ -1,0 +1,10 @@
+apiVersion: crd.com/v1
+kind: Custom
+metadata:
+  name: custom2
+spec:
+  name: custom2
+  replicas: 2
+  container:
+    image: mobarak9239/api-server:latest
+    port: 8081

@@ -41,13 +41,13 @@ func main() {
 		panic(err)
 	}
 	defaultInformerFactory := defaultInformers.NewSharedInformerFactory(defaultClient, time.Second*30)
-	customInformerFcatory := customInformers.NewSharedInformerFactory(customClient, time.Second*30)
+	customInformerFactory := customInformers.NewSharedInformerFactory(customClient, time.Second*30)
 
 	contrl := controller.NewController(defaultClient, customClient, defaultInformerFactory.Apps().V1().Deployments(),
-		customInformerFcatory.Crd().V1().Customs())
+		customInformerFactory.Crd().V1().Customs())
 	ch := make(chan struct{})
 	defaultInformerFactory.Start(ch)
-	customInformerFcatory.Start(ch)
+	customInformerFactory.Start(ch)
 	if err = contrl.Run(2, ch); err != nil {
 		log.Println("Error running controller")
 	}

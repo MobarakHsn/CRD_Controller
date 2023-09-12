@@ -44,7 +44,7 @@ func NewController(Clientset kubernetes.Interface, CustomClientset clientset.Int
 		CustomSynced:     CustomInformer.Informer().HasSynced,
 		WorkQueue:        workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "custom"),
 	}
-	log.Println("\nSetting up event handlers")
+	log.Println("Setting up event handlers")
 	CustomInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: contrl.enqueueCustom,
 		UpdateFunc: func(oldObj, newObj interface{}) {
@@ -56,7 +56,7 @@ func NewController(Clientset kubernetes.Interface, CustomClientset clientset.Int
 }
 
 func (c *Controller) enqueueCustom(obj interface{}) {
-	log.Println("\nEnqueuing Custom")
+	log.Println("Enqueuing Custom")
 	key, err := cache.MetaNamespaceKeyFunc(obj)
 	if err != nil {
 		utilRuntime.HandleError(err)
@@ -68,18 +68,18 @@ func (c *Controller) enqueueCustom(obj interface{}) {
 func (c *Controller) Run(workers int, ch <-chan struct{}) error {
 	defer utilRuntime.HandleCrash()
 	defer c.WorkQueue.ShutDown()
-	log.Println("\nStarting custom controller")
-	log.Println("\nWaiting for informer caches to sync")
+	log.Println("Starting custom controller")
+	log.Println("Waiting for informer caches to sync")
 	if ok := cache.WaitForCacheSync(ch, c.DeploymentSynced, c.CustomSynced); !ok {
 		return fmt.Errorf("\nFailed to wait for cache to sync")
 	}
-	log.Println("\nStarting workers")
+	log.Println("Starting workers")
 	for i := 0; i < workers; i++ {
 		go wait.Until(c.runWorker, time.Second, ch)
 	}
-	log.Println("\nWorkers started")
+	log.Println("Workers started")
 	<-ch
-	log.Println("\nShutting down workers")
+	log.Println("Shutting down workers")
 	return nil
 }
 
@@ -90,6 +90,7 @@ func (c *Controller) runWorker() {
 }
 
 func (c *Controller) processNextItem() bool {
+	//defer func() { fmt.Println("\n\n\n") }()
 	obj, shutdown := c.WorkQueue.Get()
 	if shutdown {
 		return false
@@ -109,7 +110,7 @@ func (c *Controller) processNextItem() bool {
 			return fmt.Errorf("\nError syncing '%s': %s, requeuing", key, err.Error())
 		}
 		c.WorkQueue.Forget(obj)
-		log.Printf("\nSuccessfully synced '%s'\n", key)
+		log.Printf("Successfully synced '%s'\n", key)
 		return nil
 	}(obj)
 	if err != nil {
@@ -122,7 +123,7 @@ func (c *Controller) processNextItem() bool {
 func (c *Controller) syncHandler(key string) error {
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
-		utilRuntime.HandleError(fmt.Errorf("\nInvalid resource key: %s", key))
+		utilRuntime.HandleError(fmt.Errorf("\nInvalid resource key: %s\n", key))
 		return nil
 	}
 	custom, err := c.CustomLister.Customs(namespace).Get(name)
@@ -133,6 +134,17 @@ func (c *Controller) syncHandler(key string) error {
 		}
 		return err
 	}
+	//deploymentName := ""
+	//if custom.Spec.Name == "" {
+	//	rand.Seed(time.Now().UnixNano())
+	//	randomNumber := rand.Intn(100000)
+	//	deploymentName = custom.Name + "-" + string(randomNumber)
+	//	fmt.Println(deploymentName)
+	//} else {
+	//	deploymentName = custom.Name + "-" + custom.Spec.Name
+	//}
+	//fmt.Println(deploymentName)
+	//return nil
 	deploymentName := custom.Spec.Name
 	if deploymentName == "" {
 		utilRuntime.HandleError(fmt.Errorf("\nName must be specified in the spec for %s", key))
@@ -140,24 +152,32 @@ func (c *Controller) syncHandler(key string) error {
 	}
 	deployment, err := c.DeploymentLister.Deployments(namespace).Get(deploymentName)
 	if errors.IsNotFound(err) {
+		log.Printf("Deployment %s created .....\n", deploymentName)
 		deployment, err = c.Clientset.AppsV1().Deployments(custom.Namespace).Create(context.TODO(), newDeployment(custom), metav1.CreateOptions{})
 	}
 	if err != nil {
 		return err
 	}
 	if custom.Spec.Replicas != nil && deployment.Spec.Replicas != nil && *custom.Spec.Replicas != *deployment.Spec.Replicas {
-		log.Println("\nCustom %s replicas: d, deployment replicas: %d\n", name, *custom.Spec.Replicas, *deployment.Spec.Replicas)
+		log.Println("Custom %s replicas: d, deployment replicas: %d", name, *custom.Spec.Replicas, *deployment.Spec.Replicas)
 		deployment, err = c.Clientset.AppsV1().Deployments(namespace).Update(context.TODO(), newDeployment(custom), metav1.UpdateOptions{})
 		if err != nil {
 			return err
 		}
 	}
+	//if custom.Spec.Replicas == nil {
+	//	custom.Spec.Replicas = 1
+	//	deployment, err = c.Clientset.AppsV1().Deployments(namespace).Update(context.TODO(), newDeployment(custom), metav1.UpdateOptions{})
+	//	if err != nil {
+	//		return err
+	//	}
+	//}
 
 	err = c.updateCustomStatus(custom, deployment)
 	if err != nil {
 		return err
 	}
-	serviceName := custom.Spec.Name + "-service"
+	serviceName := deploymentName + "-service"
 	service, err := c.Clientset.CoreV1().Services(namespace).Get(context.TODO(), serviceName, metav1.GetOptions{})
 	if errors.IsNotFound(err) {
 		service, err = c.Clientset.CoreV1().Services(namespace).Create(context.TODO(), newService(custom), metav1.CreateOptions{})
@@ -165,7 +185,7 @@ func (c *Controller) syncHandler(key string) error {
 			log.Println(err)
 			return err
 		}
-		log.Printf("\nservice %s created .....\n", service.Name)
+		log.Printf("service %s created .....\n", service.Name)
 	} else if err != nil {
 		log.Println(err)
 		return err
@@ -176,9 +196,15 @@ func (c *Controller) syncHandler(key string) error {
 func newDeployment(custom *crdv1.Custom) *appsv1.Deployment {
 
 	return &appsv1.Deployment{
+		TypeMeta: metav1.TypeMeta{
+			Kind: "Deployment",
+		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      custom.Spec.Name,
 			Namespace: custom.Namespace,
+			OwnerReferences: []metav1.OwnerReference{
+				*metav1.NewControllerRef(custom, crdv1.SchemeGroupVersion.WithKind("Custom")),
+			},
 		},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: custom.Spec.Replicas,
@@ -228,13 +254,12 @@ func newService(custom *crdv1.Custom) *corev1.Service {
 			},
 		},
 		Spec: corev1.ServiceSpec{
-			Type:     corev1.ServiceTypeNodePort,
 			Selector: labels,
 			Ports: []corev1.ServicePort{
 				{
 					Port:       custom.Spec.Container.Port,
 					TargetPort: intstr.FromInt(int(custom.Spec.Container.Port)),
-					NodePort:   30007,
+					Protocol:   "TCP",
 				},
 			},
 		},
