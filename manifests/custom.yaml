@@ -4,7 +4,7 @@ metadata:
   name: custom
 spec:
   name: custom
-  replicas: 1
+  replicas: 2
   container:
     image: mobarak9239/api-server:latest
     port: 8081
